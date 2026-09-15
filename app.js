@@ -16,6 +16,7 @@ const copyFeedback = document.getElementById('copy-feedback');
 let cameraStream;
 let scanTimerInterval;
 let scanStartTime;
+let scanRequestId = 0;
 let history = JSON.parse(localStorage.getItem('vsol-scan-history') || '[]');
 
 function showView(viewName) {
@@ -42,8 +43,10 @@ function parseOcrText(text) {
 
 function beginScan() {
   showView('camera');
+  const requestId = ++scanRequestId;
   scanStartTime = Date.now();
   scanStatusText.textContent = 'SCANNING ONU LABEL...';
+  document.getElementById('focus-label').textContent = 'OCR LOCK: SEARCHING';
   scanTimer.textContent = '00:00';
   clearInterval(scanTimerInterval);
   scanTimerInterval = setInterval(() => {
@@ -51,8 +54,57 @@ function beginScan() {
     scanTimer.textContent = `00:${String(Math.min(elapsed, 99)).padStart(2, '0')}`;
   }, 250);
   navigator.mediaDevices?.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
-    .then((stream) => { cameraStream = stream; cameraFeed.srcObject = stream; })
-    .catch(() => { cameraFeed.classList.add('unavailable'); });
+    .then((stream) => {
+      if (requestId !== scanRequestId) return;
+      cameraStream = stream;
+      cameraFeed.srcObject = stream;
+      cameraFeed.onloadedmetadata = () => runCameraOcr(requestId);
+    })
+    .catch(() => {
+      cameraFeed.classList.add('unavailable');
+      scanStatusText.textContent = 'CAMERA BLOCKED - USE IMPORT IMAGE';
+      document.getElementById('focus-label').textContent = 'OCR LOCK: WAITING FOR IMAGE';
+    });
+}
+
+async function runCameraOcr(requestId) {
+  if (requestId !== scanRequestId || !cameraFeed.videoWidth || !window.Tesseract) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = cameraFeed.videoWidth;
+  canvas.height = cameraFeed.videoHeight;
+  canvas.getContext('2d').drawImage(cameraFeed, 0, 0, canvas.width, canvas.height);
+  try {
+    const result = await Tesseract.recognize(canvas, 'eng');
+    const detected = parseOcrText(result.data.text);
+    if (detected.mac && detected.serial) {
+      completeScan(result.data.text);
+      return;
+    }
+  } catch {
+    scanStatusText.textContent = 'OCR RETRYING...';
+  }
+  if (requestId === scanRequestId) {
+    scanStatusText.textContent = 'HOLD STEADY - READING LABEL...';
+    setTimeout(() => runCameraOcr(requestId), 1000);
+  }
+}
+
+async function runImageOcr(file) {
+  if (!window.Tesseract) return;
+  scanStatusText.textContent = 'ANALYZING IMPORTED IMAGE...';
+  document.getElementById('focus-label').textContent = 'OCR LOCK: ANALYZING';
+  try {
+    const result = await Tesseract.recognize(file, 'eng');
+    const detected = parseOcrText(result.data.text);
+    if (detected.mac && detected.serial) {
+      completeScan(result.data.text);
+      return;
+    }
+    scanStatusText.textContent = 'MAC OR S/N NOT FOUND - TRY AGAIN';
+    document.getElementById('focus-label').textContent = 'OCR LOCK: INCOMPLETE';
+  } catch {
+    scanStatusText.textContent = 'IMAGE OCR FAILED - TRY AGAIN';
+  }
 }
 
 function completeScan(sourceText = 'MAC: B4:64:15:24:AE:20\nPON S/N: VSOL0027E6FE\nS/N: V25022201182') {
@@ -60,10 +112,16 @@ function completeScan(sourceText = 'MAC: B4:64:15:24:AE:20\nPON S/N: VSOL0027E6F
   macInput.value = result.mac || 'B4641524AE20';
   serialInput.value = result.serial || 'V25022201182';
   clearInterval(scanTimerInterval);
+  scanRequestId += 1;
   scanStatusText.textContent = '✓ SCAN COMPLETE';
+  document.getElementById('focus-label').textContent = 'OCR LOCK: CONFIRMED';
   document.getElementById('capture-time').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   addHistory(macInput.value, serialInput.value);
-  setTimeout(() => showView('result'), 260);
+  setTimeout(() => {
+    showView('result');
+    macInput.focus();
+    macInput.select();
+  }, 260);
 }
 
 function stopCamera() {
@@ -80,7 +138,10 @@ document.getElementById('complete-scan-button').addEventListener('click', () => 
 document.getElementById('new-scan-button').addEventListener('click', () => showView('scan'));
 document.getElementById('import-button').addEventListener('click', () => document.getElementById('image-input').click());
 document.getElementById('image-input').addEventListener('change', (event) => {
-  if (event.target.files.length) beginScan();
+  if (event.target.files.length) {
+    beginScan();
+    setTimeout(() => runImageOcr(event.target.files[0]), 150);
+  }
 });
 
 document.getElementById('copy-all-button').addEventListener('click', async () => {

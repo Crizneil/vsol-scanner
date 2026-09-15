@@ -52,12 +52,12 @@
         <div class="camera-stage glass-card">
           <video id="camera-feed" autoplay muted playsinline></video>
           <div class="camera-fallback"><span class="fallback-icon">◉</span><strong>CAMERA PREVIEW</strong><small>Align ONU label inside the frame</small></div>
-          <div class="scan-frame"><span class="corner top-left"></span><span class="corner top-right"></span><span class="corner bottom-left"></span><span class="corner bottom-right"></span><span class="scan-line"></span><span class="frame-label top-label">TARGET / ONU LABEL</span><span class="frame-label bottom-label">AUTO FOCUS: ACTIVE</span></div>
+          <div class="scan-frame"><span class="corner top-left"></span><span class="corner top-right"></span><span class="corner bottom-left"></span><span class="corner bottom-right"></span><span class="scan-line"></span><span class="frame-label top-label">TARGET / ONU LABEL</span><span class="frame-label bottom-label" id="focus-label">OCR LOCK: SEARCHING</span></div>
           <div class="capture-pulse"></div>
         </div>
         <div class="scan-status-row"><div><span class="status-dot green"></span><strong id="scan-status-text">SCANNING ONU LABEL...</strong></div><span class="scan-timer" id="scan-timer">00:00</span></div>
         <div class="diagnostic-list"><div><span>OCR ENGINE</span><strong>ONLINE</strong></div><div><span>IMAGE ANALYSIS</span><strong>ONLINE</strong></div><div><span>MAC DETECTION</span><strong>READY</strong></div><div><span>S/N DETECTION</span><strong>READY</strong></div></div>
-        <button class="button button-primary full-width" id="complete-scan-button"><span class="button-icon">✓</span> COMPLETE SCAN</button>
+        <button class="button button-ghost full-width" id="complete-scan-button"><span class="button-icon">✓</span> FINISH MANUALLY</button>
       </section>
 
       <section class="view" id="result-view" aria-labelledby="result-title">
@@ -83,6 +83,7 @@
 
     <nav class="bottom-nav" aria-label="Primary navigation"><button class="nav-item active" data-view-target="scan"><span>⌁</span><small>SCAN</small></button><button class="nav-item" data-view-target="history"><span>≡</span><small>HISTORY</small></button><button class="nav-item" data-view-target="settings"><span>⚙</span><small>SETTINGS</small></button></nav>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
