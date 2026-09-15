@@ -69,26 +69,27 @@ function beginScan() {
   if ('BarcodeDetector' in window) {
     try { barcodeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'codabar', 'ean_13', 'ean_8'] }); } catch { barcodeDetector = undefined; }
   }
-  const barcodeLibrary = getBarcodeLibrary();
-  if (!barcodeDetector && barcodeLibrary) {
-    zxingReader = new barcodeLibrary.BrowserMultiFormatReader();
-    zxingReader.decodeFromVideoDevice(undefined, cameraFeed, (result) => {
-      if (!result || requestId !== scanRequestId) return;
-      const detected = valuesFromBarcodes([{ rawValue: result.getText() }]);
-      if (detected.mac) window.scanMac = detected.mac;
-      if (detected.serial) window.scanSerial = detected.serial;
-      if (finishDetected(window.scanMac, window.scanSerial)) zxingReader.reset();
-    }).catch(() => {
-      scanStatusText.textContent = 'CAMERA BLOCKED - USE IMPORT IMAGE';
-    });
-    return;
-  }
   navigator.mediaDevices?.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
     .then((stream) => {
       if (requestId !== scanRequestId) return;
       cameraStream = stream;
       cameraFeed.srcObject = stream;
-      cameraFeed.onloadedmetadata = () => runCameraBarcodes(requestId);
+      cameraFeed.onloadedmetadata = () => {
+        const barcodeLibrary = getBarcodeLibrary();
+        if (!barcodeDetector && barcodeLibrary) {
+          zxingReader = new barcodeLibrary.BrowserMultiFormatReader();
+          zxingReader.decodeFromVideoElementContinuously(cameraFeed, (result) => {
+            if (!result || requestId !== scanRequestId) return;
+            const detected = valuesFromBarcodes([{ rawValue: result.getText() }]);
+            if (detected.mac) window.scanMac = detected.mac;
+            if (detected.serial) window.scanSerial = detected.serial;
+            scanStatusText.textContent = detected.mac || detected.serial ? 'BARCODE FOUND - FINDING SECOND VALUE...' : 'ALIGN BOTH BARCODES...';
+            if (finishDetected(window.scanMac, window.scanSerial)) zxingReader.reset();
+          });
+        } else {
+          runCameraBarcodes(requestId);
+        }
+      };
     })
     .catch(() => {
       cameraFeed.classList.add('unavailable');
