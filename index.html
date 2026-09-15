@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#080d12">
+  <title>VSOL SCANNER | ONU LABEL OCR</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="background-grid" aria-hidden="true"></div>
+    <div class="background-scan" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="#scan" data-view-target="scan" aria-label="VSOL Scanner home">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-copy"><strong>VSOL SCANNER</strong><small>ONU LABEL OCR</small></span>
+      </a>
+      <div class="system-state"><span class="status-dot"></span><span>SYSTEM READY</span></div>
+    </header>
+
+    <main class="main-content">
+      <section class="view active" id="scan-view" aria-labelledby="scan-title">
+        <div class="section-intro">
+          <p class="eyebrow">FIELD TOOL <span>/</span> 01</p>
+          <h1 id="scan-title">Capture the label.<br><em>Keep moving.</em></h1>
+          <p class="intro-copy">Extract the ONU MAC address and serial number in seconds. Built for clean handoff into Google Sheets.</p>
+        </div>
+
+        <div class="scanner-card glass-card">
+          <div class="card-topline"><span>READY FOR INPUT</span><span class="signal-bars" aria-label="Signal strength: high"><i></i><i></i><i></i><i></i></span></div>
+          <div class="scan-orbit" aria-hidden="true"><span class="orbit-ring ring-one"></span><span class="orbit-ring ring-two"></span><span class="orbit-core">+</span></div>
+          <h2>SCAN ONU LABEL</h2>
+          <p>Capture MAC + S/N</p>
+          <div class="button-stack">
+            <button class="button button-primary" id="scan-button"><span class="button-icon">⌁</span> SCAN ONU <span class="button-arrow">-></span></button>
+            <button class="button button-ghost" id="import-button"><span class="button-icon">↑</span> IMPORT IMAGE</button>
+            <input type="file" id="image-input" accept="image/*" hidden>
+          </div>
+          <div class="card-footer"><span class="tiny-led"></span> OCR ENGINE ONLINE <span class="footer-separator">|</span> LOCAL PROCESSING</div>
+        </div>
+
+        <div class="quick-note"><span class="note-symbol">//</span><span>Place the label inside the frame and hold steady for a clean read.</span></div>
+      </section>
+
+      <section class="view" id="camera-view" aria-labelledby="camera-title">
+        <div class="view-heading"><button class="back-button" data-view-target="scan" aria-label="Back to scan">&lt;</button><div><p class="eyebrow">LIVE CAPTURE <span>/</span> 02</p><h1 id="camera-title">Scanning <em>in progress</em></h1></div></div>
+        <div class="camera-stage glass-card">
+          <video id="camera-feed" autoplay muted playsinline></video>
+          <div class="camera-fallback"><span class="fallback-icon">◉</span><strong>CAMERA PREVIEW</strong><small>Align ONU label inside the frame</small></div>
+          <div class="scan-frame"><span class="corner top-left"></span><span class="corner top-right"></span><span class="corner bottom-left"></span><span class="corner bottom-right"></span><span class="scan-line"></span><span class="frame-label top-label">TARGET / ONU LABEL</span><span class="frame-label bottom-label">AUTO FOCUS: ACTIVE</span></div>
+          <div class="capture-pulse"></div>
+        </div>
+        <div class="scan-status-row"><div><span class="status-dot green"></span><strong id="scan-status-text">SCANNING ONU LABEL...</strong></div><span class="scan-timer" id="scan-timer">00:00</span></div>
+        <div class="diagnostic-list"><div><span>OCR ENGINE</span><strong>ONLINE</strong></div><div><span>IMAGE ANALYSIS</span><strong>ONLINE</strong></div><div><span>MAC DETECTION</span><strong>READY</strong></div><div><span>S/N DETECTION</span><strong>READY</strong></div></div>
+        <button class="button button-primary full-width" id="complete-scan-button"><span class="button-icon">✓</span> COMPLETE SCAN</button>
+      </section>
+
+      <section class="view" id="result-view" aria-labelledby="result-title">
+        <div class="view-heading result-heading"><div><p class="eyebrow">CAPTURE ARCHIVE <span>/</span> 03</p><h1 id="result-title">Scan <em>result</em></h1></div><div class="verified-badge"><span class="status-dot green"></span> VERIFIED</div></div>
+        <div class="captured-preview glass-card"><div class="preview-image"><span>ONU LABEL</span><span class="preview-code">MAC / S/N</span></div><div class="preview-meta"><span>LAST CAPTURE</span><strong id="capture-time">--:--</strong><small>IMAGE ANALYSIS COMPLETE</small></div></div>
+        <div class="result-fields">
+          <label class="result-field glass-card"><span class="field-label">MAC ADDRESS <small>12 HEX CHARACTERS</small></span><span class="input-wrap"><input id="mac-input" value="B4641524AE20" spellcheck="false" autocomplete="off" maxlength="17"><button class="copy-field" data-copy-target="mac-input" aria-label="Copy MAC address">⧉</button></span></label>
+          <label class="result-field glass-card"><span class="field-label">SERIAL NUMBER <small>LABEL: S/N</small></span><span class="input-wrap"><input id="serial-input" value="V25022201182" spellcheck="false" autocomplete="off"><button class="copy-field" data-copy-target="serial-input" aria-label="Copy serial number">⧉</button></span></label>
+        </div>
+        <div class="result-actions"><button class="button button-primary full-width" id="copy-all-button"><span class="button-icon">⧉</span> COPY FOR GOOGLE SHEETS</button><div class="copy-feedback" id="copy-feedback" role="status"><span>✓</span> COPIED TO CLIPBOARD <small>READY TO PASTE</small></div><button class="text-button" id="new-scan-button">+ NEW SCAN</button></div>
+      </section>
+
+      <section class="view" id="history-view" aria-labelledby="history-title">
+        <div class="section-intro compact-intro"><p class="eyebrow">LOCAL LOG <span>/</span> 04</p><h1 id="history-title">Scan <em>history</em></h1><p class="intro-copy">Recent captures remain on this device for quick reference.</p></div>
+        <div class="history-list glass-card" id="history-list"><div class="empty-history"><span>⌁</span><strong>NO CAPTURES YET</strong><small>Completed scans will appear here.</small></div></div>
+      </section>
+
+      <section class="view" id="settings-view" aria-labelledby="settings-title">
+        <div class="section-intro compact-intro"><p class="eyebrow">DEVICE CONFIG <span>/</span> 05</p><h1 id="settings-title">Scanner <em>settings</em></h1><p class="intro-copy">Local preferences for field capture.</p></div>
+        <div class="settings-list glass-card"><div class="setting-row"><div><strong>Auto capture</strong><small>Complete scan after label lock</small></div><button class="toggle active" aria-label="Auto capture enabled"><span></span></button></div><div class="setting-row"><div><strong>Haptic feedback</strong><small>Confirm completed capture</small></div><button class="toggle active" aria-label="Haptic feedback enabled"><span></span></button></div><div class="setting-row"><div><strong>Data processing</strong><small>All OCR runs locally</small></div><span class="setting-value"><span class="status-dot green"></span> LOCAL</span></div></div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Primary navigation"><button class="nav-item active" data-view-target="scan"><span>⌁</span><small>SCAN</small></button><button class="nav-item" data-view-target="history"><span>≡</span><small>HISTORY</small></button><button class="nav-item" data-view-target="settings"><span>⚙</span><small>SETTINGS</small></button></nav>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
