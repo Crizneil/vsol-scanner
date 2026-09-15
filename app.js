@@ -32,12 +32,17 @@ document.querySelectorAll('[data-view-target]').forEach((element) => {
 });
 
 function parseOcrText(text) {
-  const normalizedText = text.replace(/\r/g, '').toUpperCase();
-  const macMatch = normalizedText.match(/(?:MAC(?:\s*ADDRESS)?\s*[:#-]?\s*)?\b([A-F0-9]{2}(?:(?::|-)?[A-F0-9]{2}){5})\b/);
-  const serialMatch = normalizedText.match(/(?:^|\n)\s*S\/N\s*:\s*([A-Z0-9]+)\b/i);
+  const lines = text.replace(/\r/g, '').toUpperCase().split('\n').map((line) => line.replace(/[^A-Z0-9:/ -]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const macIndex = lines.findIndex((line) => /^MAC(?: ADDRESS)?\b/.test(line));
+  const serialIndexes = lines.map((line, index) => /^S\/N\b/.test(line) && !/^PON\s+S\/N\b/.test(line) ? index : -1).filter((index) => index >= 0);
+  const macArea = macIndex >= 0 ? lines.slice(macIndex, serialIndexes[0] >= 0 ? serialIndexes[0] : macIndex + 4).join(' ') : lines.join(' ');
+  const macMatch = macArea.match(/\b([A-F0-9]{12})\b|\b([A-F0-9]{2}(?:(?::|-)[A-F0-9]{2}){5})\b/);
+  const serialIndex = serialIndexes[serialIndexes.length - 1];
+  const serialArea = serialIndex >= 0 ? lines.slice(serialIndex, serialIndex + 3).join(' ') : '';
+  const serialMatch = serialArea.match(/S\/N\s*:?\s*([A-Z0-9]+)|\b([A-Z][A-Z0-9]{6,})\b/);
   return {
-    mac: macMatch ? macMatch[1].replace(/[:-]/g, '').toUpperCase() : '',
-    serial: serialMatch ? serialMatch[1] : ''
+    mac: macMatch ? (macMatch[1] || macMatch[2]).replace(/[:-]/g, '').toUpperCase() : '',
+    serial: serialMatch ? (serialMatch[1] || serialMatch[2]) : ''
   };
 }
 
@@ -94,7 +99,10 @@ async function runImageOcr(file) {
   scanStatusText.textContent = 'ANALYZING IMPORTED IMAGE...';
   document.getElementById('focus-label').textContent = 'OCR LOCK: ANALYZING';
   try {
-    const result = await Tesseract.recognize(file, 'eng');
+    const result = await Tesseract.recognize(file, 'eng', {
+      tessedit_pageseg_mode: '6',
+      preserve_interword_spaces: '1'
+    });
     const detected = parseOcrText(result.data.text);
     if (detected.mac && detected.serial) {
       completeScan(result.data.text);
@@ -139,8 +147,11 @@ document.getElementById('new-scan-button').addEventListener('click', () => showV
 document.getElementById('import-button').addEventListener('click', () => document.getElementById('image-input').click());
 document.getElementById('image-input').addEventListener('change', (event) => {
   if (event.target.files.length) {
-    beginScan();
-    setTimeout(() => runImageOcr(event.target.files[0]), 150);
+    showView('camera');
+    scanStartTime = Date.now();
+    scanStatusText.textContent = 'ANALYZING IMPORTED IMAGE...';
+    document.getElementById('focus-label').textContent = 'OCR LOCK: ANALYZING';
+    runImageOcr(event.target.files[0]);
   }
 });
 
