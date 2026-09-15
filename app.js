@@ -17,7 +17,13 @@ let cameraStream;
 let scanTimerInterval;
 let scanStartTime;
 let scanRequestId = 0;
+let barcodeDetector;
+let zxingReader;
 let history = JSON.parse(localStorage.getItem('vsol-scan-history') || '[]');
+
+function getBarcodeLibrary() {
+  return window.ZXingBrowser || window.ZXing;
+}
 
 function showView(viewName) {
   Object.entries(views).forEach(([name, view]) => view.classList.toggle('active', name === viewName));
@@ -49,6 +55,8 @@ function parseOcrText(text) {
 function beginScan() {
   showView('camera');
   const requestId = ++scanRequestId;
+  window.scanMac = '';
+  window.scanSerial = '';
   scanStartTime = Date.now();
   scanStatusText.textContent = 'SCANNING ONU LABEL...';
   document.getElementById('focus-label').textContent = 'OCR LOCK: SEARCHING';
@@ -58,18 +66,68 @@ function beginScan() {
     const elapsed = Math.floor((Date.now() - scanStartTime) / 1000);
     scanTimer.textContent = `00:${String(Math.min(elapsed, 99)).padStart(2, '0')}`;
   }, 250);
+  if ('BarcodeDetector' in window) {
+    try { barcodeDetector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'codabar', 'ean_13', 'ean_8'] }); } catch { barcodeDetector = undefined; }
+  }
+  const barcodeLibrary = getBarcodeLibrary();
+  if (!barcodeDetector && barcodeLibrary) {
+    zxingReader = new barcodeLibrary.BrowserMultiFormatReader();
+    zxingReader.decodeFromVideoDevice(undefined, cameraFeed, (result) => {
+      if (!result || requestId !== scanRequestId) return;
+      const detected = valuesFromBarcodes([{ rawValue: result.getText() }]);
+      if (detected.mac) window.scanMac = detected.mac;
+      if (detected.serial) window.scanSerial = detected.serial;
+      if (finishDetected(window.scanMac, window.scanSerial)) zxingReader.reset();
+    }).catch(() => {
+      scanStatusText.textContent = 'CAMERA BLOCKED - USE IMPORT IMAGE';
+    });
+    return;
+  }
   navigator.mediaDevices?.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
     .then((stream) => {
       if (requestId !== scanRequestId) return;
       cameraStream = stream;
       cameraFeed.srcObject = stream;
-      cameraFeed.onloadedmetadata = () => runCameraOcr(requestId);
+      cameraFeed.onloadedmetadata = () => runCameraBarcodes(requestId);
     })
     .catch(() => {
       cameraFeed.classList.add('unavailable');
       scanStatusText.textContent = 'CAMERA BLOCKED - USE IMPORT IMAGE';
       document.getElementById('focus-label').textContent = 'OCR LOCK: WAITING FOR IMAGE';
     });
+}
+
+function valuesFromBarcodes(barcodes) {
+  const values = barcodes.map((barcode) => barcode.rawValue.replace(/[^A-Z0-9]/gi, '').toUpperCase()).filter(Boolean);
+  const mac = values.find((value) => /^[A-F0-9]{12}$/.test(value));
+  const serial = values.find((value) => /^V[A-Z0-9]{7,}$/.test(value) && value !== mac);
+  return { mac: mac || '', serial: serial || '' };
+}
+
+function finishDetected(mac, serial) {
+  if (mac && serial) {
+    completeDetected(mac, serial);
+    return true;
+  }
+  return false;
+}
+
+async function runCameraBarcodes(requestId) {
+  if (requestId !== scanRequestId || !cameraFeed.videoWidth) return;
+  if (!barcodeDetector) {
+    runCameraOcr(requestId);
+    return;
+  }
+  try {
+    const barcodes = await barcodeDetector.detect(cameraFeed);
+    const detected = valuesFromBarcodes(barcodes);
+    if (finishDetected(detected.mac, detected.serial)) return;
+    scanStatusText.textContent = barcodes.length ? 'BARCODE FOUND - FINDING MAC + S/N...' : 'ALIGN BOTH BARCODES...';
+    document.getElementById('focus-label').textContent = barcodes.length ? 'BARCODE LOCK: PARTIAL' : 'BARCODE LOCK: SEARCHING';
+  } catch {
+    scanStatusText.textContent = 'BARCODE RETRYING...';
+  }
+  if (requestId === scanRequestId) setTimeout(() => runCameraBarcodes(requestId), 180);
 }
 
 async function runCameraOcr(requestId) {
@@ -119,10 +177,42 @@ async function runImageOcr(file) {
   }
 }
 
+async function runImageBarcodes(file) {
+  const barcodeLibrary = getBarcodeLibrary();
+  if (!barcodeDetector && barcodeLibrary) {
+    try {
+      if (!zxingReader) zxingReader = new barcodeLibrary.BrowserMultiFormatReader();
+      const imageUrl = URL.createObjectURL(file);
+      const result = await zxingReader.decodeFromImageUrl(imageUrl);
+      URL.revokeObjectURL(imageUrl);
+      const detected = valuesFromBarcodes([{ rawValue: result.getText() }]);
+      if (finishDetected(detected.mac, detected.serial)) return;
+    } catch {
+      // OCR fallback below handles labels the barcode reader cannot decode.
+    }
+    return runImageOcr(file);
+  }
+  if (!barcodeDetector) return runImageOcr(file);
+  try {
+    const image = await createImageBitmap(file);
+    const barcodes = await barcodeDetector.detect(image);
+    image.close();
+    const detected = valuesFromBarcodes(barcodes);
+    if (finishDetected(detected.mac, detected.serial)) return;
+  } catch {
+    // OCR fallback below handles unsupported or unreadable barcodes.
+  }
+  runImageOcr(file);
+}
+
 function completeScan(sourceText = 'MAC: B4:64:15:24:AE:20\nPON S/N: VSOL0027E6FE\nS/N: V25022201182') {
   const result = parseOcrText(sourceText);
-  macInput.value = result.mac || 'B4641524AE20';
-  serialInput.value = result.serial || 'V25022201182';
+  completeDetected(result.mac || 'B4641524AE20', result.serial || 'V25022201182');
+}
+
+function completeDetected(mac, serial) {
+  macInput.value = mac;
+  serialInput.value = serial;
   clearInterval(scanTimerInterval);
   scanRequestId += 1;
   scanStatusText.textContent = '✓ SCAN COMPLETE';
@@ -138,6 +228,7 @@ function completeScan(sourceText = 'MAC: B4:64:15:24:AE:20\nPON S/N: VSOL0027E6F
 
 function stopCamera() {
   clearInterval(scanTimerInterval);
+  if (zxingReader) zxingReader.reset();
   if (cameraStream) {
     cameraStream.getTracks().forEach((track) => track.stop());
     cameraStream = undefined;
@@ -155,7 +246,7 @@ document.getElementById('image-input').addEventListener('change', (event) => {
     scanStartTime = Date.now();
     scanStatusText.textContent = 'ANALYZING IMPORTED IMAGE...';
     document.getElementById('focus-label').textContent = 'OCR LOCK: ANALYZING';
-    runImageOcr(event.target.files[0]);
+    runImageBarcodes(event.target.files[0]);
   }
 });
 
