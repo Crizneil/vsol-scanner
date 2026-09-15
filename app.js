@@ -75,11 +75,15 @@ function beginScan() {
 async function runCameraOcr(requestId) {
   if (requestId !== scanRequestId || !cameraFeed.videoWidth || !window.Tesseract) return;
   const canvas = document.createElement('canvas');
-  canvas.width = cameraFeed.videoWidth;
-  canvas.height = cameraFeed.videoHeight;
-  canvas.getContext('2d').drawImage(cameraFeed, 0, 0, canvas.width, canvas.height);
+  const cropX = Math.round(cameraFeed.videoWidth * 0.09);
+  const cropY = Math.round(cameraFeed.videoHeight * 0.14);
+  const cropWidth = Math.round(cameraFeed.videoWidth * 0.82);
+  const cropHeight = Math.round(cameraFeed.videoHeight * 0.72);
+  canvas.width = cropWidth;
+  canvas.height = cropHeight;
+  canvas.getContext('2d').drawImage(cameraFeed, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
   try {
-    const result = await Tesseract.recognize(canvas, 'eng');
+    const result = await Tesseract.recognize(canvas, 'eng', { tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
     const detected = parseOcrText(result.data.text);
     if (detected.mac && detected.serial) {
       completeScan(result.data.text);
