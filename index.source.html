@@ -31,10 +31,10 @@
                 <div class="scan-frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
                 <div class="camera-topline">
                     <span id="camera-label">LIVE CAMERA</span>
-                    <span id="camera-hint">AIM AT ONE BARCODE</span>
+                    <span id="camera-hint">HOLD WHOLE STICKER IN FRAME</span>
                 </div>
             </div>
-            <p class="camera-status" id="camera-status" role="status">Ready to scan VSOL MAC and S/N barcodes.</p>
+            <p class="camera-status" id="camera-status" role="status">Ready to read MAC and device S/N from the whole label.</p>
             <button class="scan-button" id="scan-button" type="button">
                 <span class="scan-button-icon" aria-hidden="true">⌗</span>
                 <span>SCAN</span>
@@ -45,9 +45,9 @@
                     <span class="toggle-track" aria-hidden="true"></span>
                     <span>Auto Add</span>
                 </label>
-                <button class="text-button" id="ocr-button" type="button" disabled>USE OCR</button>
+                <button class="text-button" id="ocr-button" type="button" disabled>READ LABEL NOW</button>
             </div>
-            <p class="secure-hint">Camera access requires HTTPS when deployed, or localhost during development.</p>
+            <p class="secure-hint">Hold the full sticker in frame. Camera requires HTTPS or localhost.</p>
         </section>
 
         <section class="capture-card" aria-labelledby="capture-title">

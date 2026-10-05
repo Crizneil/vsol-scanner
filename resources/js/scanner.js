@@ -1,6 +1,7 @@
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { createWorker } from 'tesseract.js';
+import { extractVsolLabelValues } from './label-ocr.js';
 
 const STORAGE_KEY = 'vsol-quick-scanner.records.v1';
 const COOLDOWN_MS = 1500;
@@ -36,9 +37,14 @@ let toastTimer = null;
 let resetTimer = null;
 let processingBarcode = false;
 let lastProcessedText = '';
+let processingLabelOcr = false;
+let labelOcrTimer = null;
+let labelOcrInitialized = false;
 let cooldownUntil = 0;
 let recentlyAddedBarcodeValues = new Set();
 let lastBlockedBarcode = '';
+let lastSavedPairKey = '';
+let labelOcrErrorReported = false;
 let records = loadRecords();
 let current = { mac: '', serial: '' };
 let candidate = null;
@@ -145,40 +151,6 @@ async function getOcrWorker() {
     return ocrWorkerPromise;
 }
 
-function barcodeCenter(result, canvas) {
-    const points = result.getResultPoints?.() || [];
-    if (!points.length || !video.videoWidth || !video.videoHeight) return null;
-    const center = points.reduce((total, point) => ({
-        x: total.x + point.getX(),
-        y: total.y + point.getY(),
-    }), { x: 0, y: 0 });
-    return {
-        x: (center.x / points.length) * (canvas.width / video.videoWidth),
-        y: (center.y / points.length) * (canvas.height / video.videoHeight),
-    };
-}
-
-async function labelNearBarcode(result, canvas) {
-    const center = barcodeCenter(result, canvas);
-    if (!center) return null;
-    const worker = await getOcrWorker();
-    const { data } = await worker.recognize(canvas);
-    const labels = [];
-    for (const line of data.lines || []) {
-        const text = line.text.toUpperCase().replace(/[^A-Z/ ]/g, ' ').replace(/\s+/g, ' ').trim();
-        const type = /PON\s*\/?\s*S\s*\/?\s*N/.test(text) ? 'ignore'
-            : /\bMAC\b/.test(text) ? 'mac'
-                : /(^|\s)S\s*\/?\s*N($|\s)/.test(text) ? 'serial' : null;
-        if (!type) continue;
-        const box = line.bbox;
-        const x = (box.x0 + box.x1) / 2;
-        const y = (box.y0 + box.y1) / 2;
-        labels.push({ type, distance: Math.hypot((center.x - x) / canvas.width, (center.y - y) / canvas.height) });
-    }
-    labels.sort((a, b) => a.distance - b.distance);
-    return labels[0] && labels[0].distance < 0.2 ? labels[0].type : null;
-}
-
 function assignValue(type, value) {
     const normalized = normalizeValue(value);
     if (type === 'ignore') {
@@ -212,6 +184,58 @@ function assignValue(type, value) {
     if (current.mac && current.serial && autoAdd.checked) addRecord(true);
 }
 
+function applyLabelValues(values) {
+    const pairKey = values.mac && values.serial ? `${values.mac}\t${values.serial}` : '';
+    if (pairKey && pairKey === lastSavedPairKey) {
+        setCameraStatus('Already scanned. Hold the next ONU sticker in frame.');
+        return;
+    }
+    if (values.mac) current.mac = values.mac;
+    if (values.serial) current.serial = values.serial;
+    updateCapture();
+
+    if (!current.mac || !current.serial) {
+        if (values.mac || values.serial) {
+            setCameraStatus('Label partly read. Keep the whole sticker inside the frame.');
+        }
+        return;
+    }
+
+    candidatePanel.hidden = true;
+    inlineMessage.textContent = 'Whole label read. Check the MAC and S/N before adding.';
+    inlineMessage.className = 'inline-message is-success';
+    if (autoAdd.checked) addRecord(true);
+    else setCameraStatus('Whole label read. Check both values, then tap ADD DEVICE.');
+}
+
+async function scanWholeLabel() {
+    if (!cameraControls || processingLabelOcr) return;
+    processingLabelOcr = true;
+    try {
+        const snapshot = videoSnapshot();
+        if (!snapshot) return;
+        if (!labelOcrInitialized) setCameraStatus('Starting the whole-label reader. Keep the sticker in frame…');
+        const worker = await getOcrWorker();
+        const { data } = await worker.recognize(snapshot, {}, { text: true, blocks: true });
+        applyLabelValues(extractVsolLabelValues(data.blocks, snapshot.height));
+        labelOcrInitialized = true;
+        labelOcrErrorReported = false;
+    } catch (error) {
+        if (!labelOcrErrorReported) {
+            console.error('Whole-label OCR failed.', error);
+            setCameraStatus(`Could not read the label: ${error.message}. Keep scanning its barcodes or tap READ LABEL NOW.`, true);
+            labelOcrErrorReported = true;
+        }
+    } finally {
+        processingLabelOcr = false;
+        if (cameraControls) {
+            window.clearTimeout(labelOcrTimer);
+            const delay = labelOcrErrorReported ? 2500 : 700;
+            labelOcrTimer = window.setTimeout(() => { void scanWholeLabel(); }, delay);
+        }
+    }
+}
+
 function showCandidate(value, message = 'Barcode label unclear. Select its type, or ignore it.') {
     candidate = value;
     candidateValue.textContent = value;
@@ -241,24 +265,11 @@ async function processBarcode(result) {
     lastProcessedText = normalized;
     window.clearTimeout(resetTimer);
     setCameraStatus(`Decoded ${text} — identifying barcode…`);
-    showCandidate(text, 'Decoded live from the camera. Checking the printed label…');
+    showCandidate(text, 'Decoded live from the camera. Choose its label if the full sticker OCR has not filled it yet.');
     candidateButtons.forEach((button) => { button.disabled = true; });
-    const previousRecordCount = records.length;
-    let labelOcrFailed = false;
 
     try {
-        let type = valueType(text);
-        if (!type) {
-            const snapshot = videoSnapshot();
-            if (snapshot) {
-                try {
-                    type = await labelNearBarcode(result, snapshot);
-                } catch (error) {
-                    console.warn('Barcode label OCR unavailable; using barcode value format.', error);
-                    labelOcrFailed = true;
-                }
-            }
-        }
+        const type = valueType(text);
         if (type === 'ignore') {
             candidatePanel.hidden = true;
             assignValue('ignore', text);
@@ -266,20 +277,12 @@ async function processBarcode(result) {
         } else if (type) {
             candidatePanel.hidden = true;
             assignValue(type, text);
-            setCameraStatus(records.length > previousRecordCount
-                ? 'Saved. Camera is still live — scan the next device.'
-                : labelOcrFailed
-                    ? 'Label OCR unavailable. Barcode needs manual classification.'
-                    : current.mac && current.serial
-                        ? 'Both device values detected.'
-                        : 'Keep aiming at the other device barcode.');
+            setCameraStatus(current.mac && current.serial
+                ? 'Both device values detected. Whole-label OCR is still running.'
+                : 'Keep the full sticker in frame to read MAC and S/N together.');
         } else {
-            showCandidate(text, labelOcrFailed
-                ? 'Printed label could not be read. Select MAC, S/N, or IGNORE.'
-                : undefined);
-            setCameraStatus(labelOcrFailed
-                ? 'Barcode decoded, but label OCR failed. Choose its type or ignore it.'
-                : 'Barcode decoded. Choose MAC, S/N, or IGNORE.');
+            showCandidate(text, 'Barcode value is unclear. Choose MAC, S/N, or IGNORE.');
+            setCameraStatus('Barcode decoded but unclear. Choose its type or hold the whole label in frame.');
         }
     } finally {
         processingBarcode = false;
@@ -298,7 +301,9 @@ function addRecord(automatic = false) {
     if (!current.mac || !current.serial) return;
     const mac = current.mac;
     const serial = current.serial;
+    const pairKey = `${mac}\t${serial}`;
     if (hasDuplicate(mac, serial)) {
+        lastSavedPairKey = pairKey;
         inlineMessage.textContent = 'Already scanned — duplicate MAC or S/N.';
         inlineMessage.className = 'inline-message is-error';
         showToast('Already scanned', true);
@@ -316,6 +321,7 @@ function addRecord(automatic = false) {
         return;
     }
     records = nextRecords;
+    lastSavedPairKey = pairKey;
     renderRecords();
     clearCurrent();
     recentlyAddedBarcodeValues = new Set([mac, serial]);
@@ -359,7 +365,8 @@ async function startCamera() {
         ocrButton.disabled = false;
         scanButton.querySelector('span:last-child').textContent = 'CAMERA LIVE';
         scanButton.disabled = false;
-        setCameraStatus('Camera is live. Point it at one barcode at a time.');
+        setCameraStatus('Camera is live. Hold the whole sticker in frame to read MAC and S/N.');
+        void scanWholeLabel();
     } catch (error) {
         cameraControls?.stop();
         cameraControls = null;
@@ -373,49 +380,28 @@ async function startCamera() {
     }
 }
 
-async function runOcrFallback() {
+async function readLabelNow() {
     if (!cameraControls) {
-        showToast('Start the live camera before using OCR.', true);
+        showToast('Start the live camera before reading a label.', true);
         return;
     }
-    ocrButton.disabled = true;
-    ocrButton.textContent = 'READING…';
-    setCameraStatus('OCR fallback is reading the current live camera frame…');
-    try {
-        const snapshot = videoSnapshot();
-        if (!snapshot) throw new Error('The camera frame is not ready yet.');
-        const worker = await getOcrWorker();
-        const { data } = await worker.recognize(snapshot);
-        const text = data.text.toUpperCase().replace(/\s/g, '');
-        const macMatch = text.match(/(?:MAC[:]?)([0-9A-F]{12})/) || text.match(/\b([0-9A-F]{12})\b/);
-        const safeText = text.replace(/PONS\/?N[A-Z0-9]*/g, '');
-        const serialMatch = safeText.match(/(?:S\/?N[:]?)(V[A-Z0-9]{2,24})/) || safeText.match(/\b(V[A-Z0-9]{2,24})\b/);
-        const serial = serialMatch?.[1] && !/^VSOL/i.test(serialMatch[1]) ? serialMatch[1] : '';
-        if (macMatch?.[1]) assignValue('mac', macMatch[1]);
-        if (serial) assignValue('serial', serial);
-        if (!macMatch && !serial) {
-            showCandidate('', 'OCR found no safe MAC or device S/N. PON S/N values are never accepted.');
-            candidateValue.textContent = 'No safe value found';
-        }
-        setCameraStatus('OCR fallback complete. Review detected values before adding.');
-    } catch (error) {
-        showToast(`OCR could not read the camera frame: ${error.message}`, true);
-        setCameraStatus('OCR fallback failed. Keep scanning barcodes or try again.', true);
-    } finally {
-        ocrButton.disabled = false;
-        ocrButton.textContent = 'USE OCR';
+    if (processingLabelOcr) {
+        setCameraStatus('Reading the whole label now. Keep the sticker in frame.');
+        return;
     }
+    setCameraStatus('Reading MAC and S/N from the whole live-camera frame…');
+    void scanWholeLabel();
 }
 
 scanButton.addEventListener('click', () => {
     if (cameraControls) {
-        setCameraStatus('Camera remains live. Aim at the next barcode.');
+        setCameraStatus('Camera remains live. Hold the next whole sticker in frame.');
         return;
     }
     void startCamera();
 });
 addButton.addEventListener('click', () => addRecord(false));
-ocrButton.addEventListener('click', () => void runOcrFallback());
+ocrButton.addEventListener('click', () => void readLabelNow());
 
 document.querySelectorAll('[data-candidate]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -460,6 +446,7 @@ document.querySelector('#clear-button').addEventListener('click', () => {
         return;
     }
     renderRecords();
+    lastSavedPairKey = '';
     showToast('All scans cleared.');
 });
 

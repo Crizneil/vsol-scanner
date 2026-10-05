@@ -1,6 +1,6 @@
 # VSOL Quick Scanner
 
-A mobile-first, browser-only live barcode scanner for VSOL ONU labels. Point the phone's rear camera at a sticker to continuously decode its MAC address and device S/N. PON S/N values are ignored.
+A mobile-first, browser-only live label scanner for VSOL ONU labels. Point the phone's rear camera at the whole sticker to continuously OCR its printed MAC address and device S/N together. PON S/N values are ignored.
 
 ## Run locally
 
@@ -17,8 +17,9 @@ Build with `npm run build`, then publish the repository's `main` branch from the
 
 ## Scanning and privacy
 
-- ZXing decodes barcodes directly from the live camera stream; no photo or upload is needed.
-- Barcode values identify MAC addresses and device serial numbers. `VSOL...` PON S/N values are ignored.
-- If a barcode cannot be classified by its value, the scanner attempts to associate it with a nearby printed label using OCR. You can also choose **USE OCR** to read the current live frame.
+- Tesseract OCR reads the printed MAC and device S/N from each live camera frame; no photo or upload is needed.
+- ZXing continuously decodes barcodes from the same live camera as an additional scanning method.
+- OCR associates the printed values with the nearby MAC and S/N labels, and rejects `VSOL...` PON S/N values.
+- **READ LABEL NOW** immediately OCRs the current camera frame.
 - Scan history is stored in this browser's local storage. It is not sent to an application backend.
 - **COPY ALL** creates tab-separated MAC/S/N rows for Google Sheets.
