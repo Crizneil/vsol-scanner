@@ -9,11 +9,11 @@ npm install
 npm run dev
 ```
 
-Open the local Vite URL on the phone or computer and allow camera access. Camera access requires a secure context: use `localhost` for local development or HTTPS when deployed.
+Open the `/index.source.html` path at the local Vite URL on the phone or computer and allow camera access. Camera access requires a secure context: use `localhost` for local development or HTTPS when deployed.
 
 ## Deploy
 
-The `main` branch deploys to GitHub Pages via `.github/workflows/deploy-pages.yml`. Enable GitHub Pages with **GitHub Actions** as the build and deployment source in repository settings. The app is hosted at `https://crizneil.github.io/vsol-scanner/`.
+Build with `npm run build`, then publish the repository's `main` branch from the root directory with GitHub Pages. The build writes the compiled, self-contained app to `index.html` and `assets/`, so the project works at the GitHub Pages subpath. The app is hosted at `https://crizneil.github.io/vsol-scanner/`.
 
 ## Scanning and privacy
 
